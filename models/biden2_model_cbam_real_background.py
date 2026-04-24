@@ -13,9 +13,9 @@ from torchvision import transforms
 from torchvision.transforms.functional import to_tensor, to_pil_image
 import skimage as ski
 from .utils_blindsr import add_blur, add_resize, add_Gaussian_noise, add_speckle_noise, add_Poisson_noise
-from .architecture_utils import ContextAwareDecoder # Import your new class
+from .architecture_utils import ContextAwareDecoder 
 
-#import .utils_image as util
+
 """ 
 BIDeN model for Task I, Mixed image decomposition across multiple domains. Max number of domain = 2.
 
@@ -43,7 +43,7 @@ class BIDEN2Model(BaseModel):
         """  Configures options specific for BIDeN model
         """
         parser.add_argument('--lambda_GAN', type=float, default=1.0, help='weight for GAN loss')
-        parser.add_argument('--lambda_Ln', type=float, default=50.0, help='weight for L1/L2 loss') #default was 30.0, changed to 50 to force accuracy
+        parser.add_argument('--lambda_Ln', type=float, default=30.0, help='weight for L1/L2 loss') 
         parser.add_argument('--lambda_VGG', type=float, default=10.0, help='weight for VGG loss')
         parser.add_argument('--lambda_BCE', type=float, default=1.0, help='weight for BCE loss')
         parser.add_argument('--test_input', type=str, default='A', help='test mixed images.')
@@ -80,8 +80,7 @@ class BIDEN2Model(BaseModel):
                                        #opt.no_antialias_up, self.gpu_ids, opt)
 
         # Define netH2 (Undertext - UPGRADED)
-            # We assume the encoder outputs 'ngf * 4' channels (standard for ResNet encoder)
-            # We replace the generic define_G with our specialized class
+        # We replace the generic define_G with our specialized class
         encoder_out_dim = opt.ngf * 8
             
         self.netH2 = ContextAwareDecoder(encoder_out_dim, opt.output_nc, opt.ngf).to(self.device)
@@ -104,7 +103,7 @@ class BIDEN2Model(BaseModel):
             self.criterionVGG = VGGLoss(opt).to(self.device)
             self.criterionL1 = torch.nn.L1Loss().to(self.device)
             self.criterionBCE = torch.nn.BCEWithLogitsLoss().to(self.device)
-            #self.criterionConn = ConnectivityLoss(alpha=0.0, beta=0.0, penalty_weight=10.0).to(self.device) # connectivity preserving loss
+            self.criterionConn = ConnectivityLoss(alpha=1.0, beta=0.0, penalty_weight=1.0).to(self.device) # connectivity preserving loss
             self.optimizer_G = torch.optim.Adam(
                 itertools.chain(self.netE.parameters(), self.netH1.parameters(),
                                 self.netH2.parameters()),
@@ -145,18 +144,17 @@ class BIDEN2Model(BaseModel):
 
     def get_real_background(self, batch_size, height, width):
         """
-        Loads real parchment patches with AGGRESSIVE augmentation.
-        Prevents overfitting when you only have a few real background images.
+        Loads real parchment patches.
+       
         """
         import glob
-        # UPDATE THIS PATH to where you saved your empty background crops
         bg_paths = glob.glob('./datasets/background/*.jpg') 
         
         # Fallback to synthetic if no real images found
         if len(bg_paths) == 0:
             print("bg not found")
             return self.create_stained_background_torch(batch_size, height, width)
-
+            
         real_bgs = []
         for _ in range(batch_size):
             # 1. Load Random Image
@@ -173,7 +171,7 @@ class BIDEN2Model(BaseModel):
                 bg_pil = bg_pil.transpose(Image.FLIP_TOP_BOTTOM)
             
             # B. Random 90-degree Rotations (0, 90, 180, 270)
-            # We don't use arbitrary angles (like 45) to avoid black corners
+            
             rotations = [None, Image.ROTATE_90, Image.ROTATE_180, Image.ROTATE_270]
             rot_choice = random.choice(rotations)
             if rot_choice:
@@ -207,9 +205,8 @@ class BIDEN2Model(BaseModel):
     def create_stained_background_torch(self, batch_size, height, width):
         """
         Generates parchment with realistic STAINS and CLOUDS (Low-frequency noise).
-        Matches the histogram of the uploaded 'snap.jpg'.
         """
-        # 1. Base Paper Color (Average from snap.jpg is approx R:180, G:140, B:100)
+    
         # We vary it slightly per batch
         base_r = (torch.rand(batch_size, 1, 1, 1, device=self.device) * 20.0 + 170.0) / 255.0
         base_g = (torch.rand(batch_size, 1, 1, 1, device=self.device) * 20.0 + 130.0) / 255.0
@@ -217,19 +214,17 @@ class BIDEN2Model(BaseModel):
         
         bg = torch.cat([base_r, base_g, base_b], dim=1).expand(batch_size, 3, height, width)
 
-        # 2. Add "Stains" (Low Frequency Noise)
-        # We generate tiny noise (e.g. 8x8) and resize it to (256x256) to get smooth blobs
+        # Add "Stains" (Low Frequency Noise)
         stain_resolution = 16 
         small_noise = torch.rand(batch_size, 1, stain_resolution, stain_resolution, device=self.device)
         # Upsample to full size (creates cloudy look)
         large_stains = F.interpolate(small_noise, size=(height, width), mode='bilinear', align_corners=False)
         
         # Darken areas where stains are strong
-        # Stains are usually brownish, so we subtract from RGB
         stain_intensity = 0.3 # How dark the stains are
         bg = bg - (large_stains * stain_intensity)
         
-        # 3. Add "Grain" (High Frequency Noise)
+        # Add "Grain" (High Frequency Noise)
         grain = torch.randn(batch_size, 3, height, width, device=self.device) * 0.03
         bg = bg + grain
             
@@ -240,7 +235,7 @@ class BIDEN2Model(BaseModel):
         Generates parchment background on GPU.
         Randomly varies between Light Beige (Clean) and Dark Brown (Aged).
         """
-        # 1. Base Tone Variation (Subtle shifts in the beige/yellow hue)
+        # Base Tone Variation (Subtle shifts in the beige/yellow hue)
         # Generate shapes (B, 1, 1, 1)
         base_r = (torch.rand(batch_size, 1, 1, 1, device=self.device) * 15.0 + 240.0) / 255.0
         base_g = (torch.rand(batch_size, 1, 1, 1, device=self.device) * 15.0 + 230.0) / 255.0
@@ -249,13 +244,13 @@ class BIDEN2Model(BaseModel):
         # Combine into (B, 3, 1, 1)
         base_color = torch.cat([base_r, base_g, base_b], dim=1)
 
-        # 2. Random Aging (Darkness)
+        # Random Aging (Darkness)
         # Random intensity (B, 1, 1, 1)
         intensity = torch.rand(batch_size, 1, 1, 1, device=self.device)
         max_age_drop = 90.0 / 255.0
         age_drop = intensity * max_age_drop
         
-        # 3. Apply Color + Texture
+        # Apply Color + Texture
         # Texture (B, 3, H, W)
         texture = torch.randn(batch_size, 3, height, width, device=self.device) * 0.02
         
@@ -272,8 +267,7 @@ class BIDEN2Model(BaseModel):
         B, C, H, W = img_tensor.shape
         out = img_tensor.clone()
         
-        # 1. Gaussian Noise
-        # 80% chance to add Gaussian noise
+        # Gaussian Noise
         if random.random() < 0.8:
             # Random Noise Level: Sigma between 5/255 and 30/255
             # We use a random sigma per batch item (approximated by multiplying noise)
@@ -281,15 +275,13 @@ class BIDEN2Model(BaseModel):
             gaussian_noise = torch.randn_like(out) * noise_level
             out = out + gaussian_noise
 
-        # 2. Speckle Noise
-        # 50% chance to add Speckle noise
+        # Speckle Noise
         if random.random() < 0.6:
             noise_level = torch.rand(B, 1, 1, 1, device=self.device) * (25.0/255.0) + (5.0/255.0)
             speckle = torch.randn_like(out) * noise_level
             out = out + (out * speckle)
 
-        # 3. Blur
-        # 70% chance to apply Gaussian Blur
+        # Blur
         if random.random() < 0.7:
             # Random sigma between 0.5 and 2.5
             sigma = random.uniform(0.5, 2.5)
@@ -298,26 +290,6 @@ class BIDEN2Model(BaseModel):
             out = blurrer(out)
 
         return torch.clamp(out, 0.0, 1.0)
-
-    def halo_free_tensor(self, img_tensor, halo_power=6.0, faint=False):
-        """
-        Calculates alpha channel from RGB intensity on GPU.
-        Input: (B, 3, H, W)
-        Output: (B, 4, H, W) -> RGBA
-        """
-        # Calculate Whiteness: (R+G+B)/3
-        whiteness = img_tensor.mean(dim=1, keepdim=True)
-        alpha = 1.0 - whiteness
-        alpha = torch.pow(alpha, halo_power)
-
-        if faint:
-            # Random opacity per item in batch
-            B = img_tensor.shape[0]
-            opacities = torch.rand(B, 1, 1, 1, device=self.device) * (0.45 - 0.15) + 0.15
-            alpha = alpha * opacities
-        
-        # Concatenate RGB and Alpha
-        return torch.cat([img_tensor, alpha], dim=1)
         
     def generate_liquid_ink(self, batch_size, H, W, profile="iron_gall"):
         """
@@ -352,7 +324,7 @@ class BIDEN2Model(BaseModel):
         Generates granular ink texture based on specific chemical profiles.
         Options: 'iron_gall', 'carbon', 'sepia', 'rust'
         """
-        # 1. Define Color Profiles (R, G, B ranges)
+        # Define Color Profiles (R, G, B ranges)
         if profile == "iron_gall":
             # The most common palimpsest ink. Fades to Grey-Brown.
             # R: 0.25-0.35, G: 0.20-0.30, B: 0.15-0.25 (Desaturated)
@@ -381,7 +353,7 @@ class BIDEN2Model(BaseModel):
 
         base_color = torch.cat([base_r, base_g, base_b], dim=1)
 
-        # 2. Add Granularity (Pigment Noise)
+        # Add Granularity (Pigment Noise)
         # Iron Gall ink is grainier than Carbon ink
         noise_scale = 0.2 if profile == "iron_gall" else 0.15
         
@@ -412,58 +384,46 @@ class BIDEN2Model(BaseModel):
         
         # Soft Alpha Mask for B
         text_mask_B = 1.0 - B_degraded.mean(dim=1, keepdim=True)
-        # Use lower power for B to keep it faint/ghostly
-        ## for epoch 20 onward: 
-        #alpha_B = torch.pow(text_mask_B.clamp(0, 1), 2.0)
-        # CHANGE 1: Use exponent 1.0 (Linear) instead of 2.0 (Ghostly) (for first 20 epochs)
-        # Multiply by 0.8 to ensure it's nearly opaque
-        #alpha_B = torch.pow(text_mask_B.clamp(0, 1), 1.0) * 0.8
-        # from epoch 50 onward:
+        
         opacity_B = torch.rand(batch_size, 1, 1, 1, device=self.device) * 0.3 + 0.3
         alpha_B = torch.pow(text_mask_B.clamp(0, 1), 3.0) * opacity_B
         
-        # --- HARD MODE: TEXT FRAGMENTATION --- (after epoch 120)
+        # --- HARD MODE: TEXT FRAGMENTATION 
         # Create a random noise mask (holes in the ink)
         # 40% of the ink pixels are randomly removed
         flaking_percentage=0.3 + 0.4 * torch.rand(1, device=text_mask_B.device)
         flaking_mask = (torch.rand_like(text_mask_B) > flaking_percentage).float()
         alpha_B = alpha_B * flaking_mask
 
-        # Color B: Reddish/Sepia (from epoch 20 onward) 
         #ink_r = torch.rand(batch_size, 1, 1, 1, device=self.device) * 0.1 + 0.35 
         #ink_g = torch.rand(batch_size, 1, 1, 1, device=self.device) * 0.1 + 0.15 
         #ink_b = torch.rand(batch_size, 1, 1, 1, device=self.device) * 0.1 + 0.05
         #ink_color_B = torch.cat([ink_r, ink_g, ink_b], dim=1)
-        # --- CHANGE 1: PER-PIXEL INK COLOR --- (from epoch 120 onward)
-        # Replaces the simple 'ink_r = ...' lines
-        # Now 'ink_color_B' is (B, 3, H, W) instead of (B, 3, 1, 1)
-        #ink_color_B = self.generate_liquid_ink(batch_size, H, W, profile="iron_gall")
-        # CHANGE 2: Darker Ink (Dark Grey/Black) instead of Light Sepia (for the first 20 epochs)
-        # R, G, B around 0.1 to 0.2
+        
         ink_r = torch.rand(batch_size, 1, 1, 1, device=self.device) * 0.1 + 0.1 
         ink_g = torch.rand(batch_size, 1, 1, 1, device=self.device) * 0.1 + 0.1 
         ink_b = torch.rand(batch_size, 1, 1, 1, device=self.device) * 0.1 + 0.1
         ink_color_B = torch.cat([ink_r, ink_g, ink_b], dim=1)
         #ink_color_B = torch.zeros(batch_size, 3, 1, 1, device=self.device) # absolute black for binarized inputs
 
-        # --- PREPARE UPPERTEXT (Dark but Textured) ---
-        # 1. Add Texture to the Shape (Crucial for Realism)
+        # --- PREPARE UPPERTEXT ---
+        # Add Texture to the Shape (Crucial for Realism)
         # Real ink isn't a flat shape. It has internal noise.
         # We add noise to the source image before calculating alpha.
         A_noisy = real_A + (torch.randn_like(real_A) * 0.1) 
         
-        # 2. Calculate Alpha with Variable Sharpness
+        # Calculate Alpha with Variable Sharpness
         # Instead of fixed sharp edges, we vary the bleeding (sharpness)
         text_mask_A = 1.0 - A_noisy.mean(dim=1, keepdim=True)
-        # Sharpness varies: 2.0 (blurry/bleeding) to 5.0 (sharp) first 50 epochs
+        
         #sharpness = torch.rand(batch_size, 1, 1, 1, device=self.device) * 3.0 + 2.0
         #alpha_A = torch.pow(text_mask_A.clamp(0, 1), sharpness)
-        # from epoch 50 onward
+       
         sharpness = torch.rand(batch_size, 1, 1, 1, device=self.device) * 1.5 + 1.5
         opacity_A = 1.0 #torch.rand(batch_size, 1, 1, 1, device=self.device) * 0.25 + 0.80 # 1.0
         alpha_A = torch.pow(text_mask_A.clamp(0, 1), sharpness) * opacity_A
         
-        # 3. Ink Color with Internal Grain
+        # Ink Color with Internal Grain
         # Base color: Dark Brown to Black (Not just pure black)
         # R: 0.05-0.20 (Can be brownish)
         base_r = torch.rand(batch_size, 1, 1, 1, device=self.device) * 0.15 + 0.05
@@ -508,7 +468,7 @@ class BIDEN2Model(BaseModel):
         # Blend result towards ink_A
         out = out * (1 - alpha_A) + ink_color_A * alpha_A
 
-        # 3. Apply Uneven Lighting (Optional but recommended)
+        # Apply Uneven Lighting (Optional but recommended)
         # out = self.apply_lighting_torch(out)
 
         # Map back to [-1, 1]
@@ -517,7 +477,7 @@ class BIDEN2Model(BaseModel):
         #canvas_text_B = white_bg * burn_factor_B
         #gt_text = canvas_text_B * (1.0 - alpha_A) + ink_color_A * alpha_A
 
-        # 3. Create Background Target (Target B)
+        # Create Background Target (Target B)
         #gt_bg = bg_rgb
 
         # Map back to [-1, 1]
@@ -635,15 +595,21 @@ class BIDEN2Model(BaseModel):
         self.loss_VGG = self.criterionVGG(self.fake_A, self.real_A) * self.label[0] \
                         + self.criterionVGG(self.fake_B, self.real_B) * self.label[1]
 
-        #if self.criterionConn.alpha > 0:
-            #loss_conn_A = self.criterionConn(self.fake_A, self.real_A) * self.label[0]
-            #loss_conn_B = self.criterionConn(self.fake_B, self.real_B) * self.label[1]
-            #self.loss_Conn = loss_conn_B #+ loss_conn_B
-        #else:
-            #self.loss_Conn = 0.0
-            
+        if self.criterionConn.alpha > 0:
+            loss_conn_A = self.criterionConn(self.fake_A, self.real_A) * self.label[0]
+            loss_conn_B = self.criterionConn(self.fake_B, self.real_B) * self.label[1]
+            self.loss_Conn = loss_conn_B #+ loss_conn_B
+        else:
+            self.loss_Conn = 0.0
+
+        # Feature consistency loss
+        features_noisy = self.fake_all
+        with torch.no_grad():
+            features_clean = self.netE(self.real_B)
+        loss_feature_consistency = self.criterionL1(features_noisy, features_clean)
+        
         self.loss_G = self.loss_G_GAN * self.opt.lambda_GAN + self.loss_Ln * self.opt.lambda_Ln \
-                      + self.loss_VGG * self.opt.lambda_VGG #+ self.loss_Conn * 1.0  # Add this term
+                      + self.loss_VGG * self.opt.lambda_VGG + self.loss_Conn * 1.0 + loss_feature_consistency *10.0
 
         return self.loss_G
 
