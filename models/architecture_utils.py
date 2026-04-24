@@ -3,54 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange # You may need to: pip install einops
 
-class TransformerBottleneck(nn.Module):
-    """
-    Applies Multi-Head Self-Attention at the bottleneck of the network.
-    This gives the model 'Global Context' to connect widely separated ink strokes.
-    """
-    def __init__(self, dim, num_heads=8, mlp_ratio=4.0, dropout=0.1):
-        super(TransformerBottleneck, self).__init__()
-        self.num_heads = num_heads
-        
-        # Layer Normalization
-        self.norm1 = nn.LayerNorm(dim)
-        self.norm2 = nn.LayerNorm(dim)
-        
-        # Multi-Head Self Attention
-        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, dropout=dropout, batch_first=True)
-        
-        # Feed Forward Network (MLP)
-        hidden_dim = int(dim * mlp_ratio)
-        self.mlp = nn.Sequential(
-            nn.Linear(dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, dim),
-            nn.Dropout(dropout)
-        )
-
-    def forward(self, x):
-        # x is a spatial feature map from the CNN: (Batch, Channels, Height, Width)
-        B, C, H, W = x.shape
-        
-        # 1. Flatten spatial dimensions to create a "Sequence of Patches"
-        # Shape becomes: (Batch, Sequence_Length, Channels) where Sequence_Length = H * W
-        x_flat = rearrange(x, 'b c h w -> b (h w) c')
-        
-        # 2. Apply Self-Attention (with Residual Connection)
-        # We attend the sequence to itself
-        attn_input = self.norm1(x_flat)
-        attn_out, _ = self.attn(attn_input, attn_input, attn_input)
-        x_flat = x_flat + attn_out
-        
-        # 3. Apply MLP (with Residual Connection)
-        x_flat = x_flat + self.mlp(self.norm2(x_flat))
-        
-        # 4. Reshape back to Spatial Image Map
-        out = rearrange(x_flat, 'b (h w) c -> b c h w', h=H, w=W)
-        
-        return out
-
 class CBAM(nn.Module):
     """
     Convolutional Block Attention Module.
@@ -58,7 +10,7 @@ class CBAM(nn.Module):
     """
     def __init__(self, gate_channels, reduction_ratio=16):
         super(CBAM, self).__init__()
-        # 1. Channel Attention
+        # Channel Attention
         self.mlp = nn.Sequential(
             nn.Flatten(),
             nn.Linear(gate_channels, gate_channels // reduction_ratio),
@@ -67,7 +19,7 @@ class CBAM(nn.Module):
         )
         self.channel_sigmoid = nn.Sigmoid()
 
-        # 2. Spatial Attention
+        # Spatial Attention
         self.spatial = nn.Sequential(
             nn.Conv2d(2, 1, kernel_size=7, stride=1, padding=3, bias=False),
             nn.BatchNorm2d(1), # Helps stabilize gradients
@@ -112,10 +64,10 @@ class ContextAwareDecoder(nn.Module):
     def __init__(self, input_nc, output_nc, ngf=64):
         super(ContextAwareDecoder, self).__init__()
         
-        # 1. Attention Gate (Focus on the faint ink)
+        # Attention Gate (Focus on the faint ink)
         self.attention = CBAM(input_nc)
 
-        # 2. Context Aggregation (Dilated Blocks)
+        # Context Aggregation (Dilated Blocks)
         # Dilations: 1, 2, 4, 8 -> Sees very large context
         self.context_stream = nn.Sequential(
             DilatedResBlock(input_nc, dilation=1),
@@ -124,7 +76,7 @@ class ContextAwareDecoder(nn.Module):
             DilatedResBlock(input_nc, dilation=8)
         )
 
-        # 3. Upsampling Stream (Standard decoding)
+        # Upsampling Stream (Standard decoding)
         model = []
         # Upsample 1 (Assuming input was downsampled 4x total)
         model += [nn.ConvTranspose2d(input_nc, ngf * 2, kernel_size=3, stride=2, padding=1, output_padding=1),
