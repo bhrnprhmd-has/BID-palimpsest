@@ -72,7 +72,7 @@ class ConnectivityLoss(nn.Module):
         pred: (B, C, H, W) Output from model (Logits or [-1, 1])
         target: (B, C, H, W) Ground Truth [-1, 1]
         """
-        # 1. Normalize Inputs
+        # Normalize Inputs
         # Target: [-1, 1] -> [0, 1]
         target_01 = (target + 1) / 2.0
         
@@ -82,7 +82,7 @@ class ConnectivityLoss(nn.Module):
         else:
             pred_prob = pred
 
-        # 2. Base Pixel Loss (L0)
+        # Base Pixel Loss (L0)
         # We calculate the standard loss for every pixel first
         # We use L1 here to match your model's style, or BCE
         pixel_loss = torch.abs(pred_prob - target_01) 
@@ -91,7 +91,7 @@ class ConnectivityLoss(nn.Module):
         if self.alpha == 0:
             return pixel_loss.mean()
 
-        # 3. Topology Weight Map Calculation
+        # Topology Weight Map Calculation
         # We create a map of "1.0"s, and add "10.0" (penalty) to bad pixels
         weight_map = torch.ones_like(pred)
         
@@ -142,7 +142,7 @@ class ConnectivityLoss(nn.Module):
                             error_pixels = comp_mask & (p_mask == 0)
                             weight_map[b, 0][error_pixels] += self.penalty
 
-        # 4. Apply Weighted Loss
+        # Apply Weighted Loss
         # Formula: (1 - alpha) * L0 + alpha * Weighted_L0
         weighted_loss = (pixel_loss * weight_map).mean()
         
