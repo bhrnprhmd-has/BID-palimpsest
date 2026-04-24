@@ -3,7 +3,6 @@ import torch.nn.functional as F
 import torch
 from .base_model import BaseModel
 from . import networks
-#from .losses import VGGLoss
 from .losses import VGGLoss, ConnectivityLoss
 from numpy import *
 import itertools
