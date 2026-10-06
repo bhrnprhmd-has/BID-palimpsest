@@ -8,4 +8,4 @@ Our code is developed based on [BID](https://github.com/JunlinHan/BID). We thank
 
 
 ### Funding
-This repository was developed within the AntCom project (From Antiquity to Community: Rethinking Classical Heritage through Citizen Humanities), funded by the Horizon Europe Marie Skłodowska-Curie Doctoral Networks programme (Grant Agreement No. 101073543).
+This repository was developed within the [AntCom project](https://github.com/antcommsca) (From Antiquity to Community: Rethinking Classical Heritage through Citizen Humanities), funded by the Horizon Europe Marie Skłodowska-Curie Doctoral Networks programme (Grant Agreement No. 101073543).
